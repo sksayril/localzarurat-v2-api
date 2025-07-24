@@ -6,13 +6,18 @@ const MainCategory = require('../models/mainCategory.model');
 const SubCategory = require('../models/subCategory.model');
 const VendorRating = require('../models/vendorRating.model');
 const { verifyToken, customerOnly, optionalAuth, updateLastLogin } = require('../middleware/auth');
-const { validateQuery, validateParams, commonSchemas } = require('../middleware/validation');
 const { searchVendors, searchProducts, getSearchSuggestions, getPopularSearches } = require('../utilities/search');
+const mongoose = require('mongoose');
+
+// Helper function to validate ObjectId
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
 
 // ==================== SEARCH & DISCOVERY ====================
 
 // Search vendors
-router.get('/search/vendors', optionalAuth, validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/search/vendors', optionalAuth, async (req, res) => {
   try {
     const filters = {
       query: req.query.query,
@@ -44,7 +49,7 @@ router.get('/search/vendors', optionalAuth, validateQuery(commonSchemas.paginati
 });
 
 // Search products
-router.get('/search/products', optionalAuth, validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/search/products', optionalAuth, async (req, res) => {
   try {
     const filters = {
       query: req.query.query,
@@ -194,7 +199,7 @@ router.get('/subcategories', async (req, res) => {
 });
 
 // Get vendors/shops by main category
-router.get('/categories/:mainCategoryId/vendors', optionalAuth, validateParams(commonSchemas.id), validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/categories/:mainCategoryId/vendors', optionalAuth, async (req, res) => {
   try {
     const { mainCategoryId } = req.params;
     const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = -1 } = req.query;
@@ -267,12 +272,20 @@ router.get('/categories/:mainCategoryId/vendors', optionalAuth, validateParams(c
   }
 });
 
-// Get vendors/shops by subcategory
-router.get('/subcategories/:subCategoryId/vendors',  async (req, res) => {
+// Get vendors/shops by subcategory with full shop information
+router.get('/subcategories/:subCategoryId/vendors', async (req, res) => {
   try {
     const { subCategoryId } = req.params;
     const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = -1 } = req.query;
     const skip = (page - 1) * limit;
+
+    // Validate ObjectId
+    if (!isValidObjectId(subCategoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID format'
+      });
+    }
 
     // Verify subcategory exists and is active
     const subCategory = await SubCategory.findOne({ 
@@ -289,15 +302,15 @@ router.get('/subcategories/:subCategoryId/vendors',  async (req, res) => {
       });
     }
 
-    // Get vendors in this subcategory
+    // Get vendors in this subcategory with full shop information
     const vendors = await User.find({
       role: 'vendor',
       isActive: true,
       'vendorDetails.subscription.isActive': true,
       'vendorDetails.subCategory': subCategoryId
     })
-    .populate('vendorDetails.mainCategory', 'name icon')
-    .populate('vendorDetails.subCategory', 'name image thumbnail')
+    .populate('vendorDetails.mainCategory', 'name icon description slug')
+    .populate('vendorDetails.subCategory', 'name image thumbnail description slug')
     .select('-password -loginAttempts -lockUntil -email')
     .sort({ [sortBy]: parseInt(sortOrder) })
     .skip(skip)
@@ -311,11 +324,86 @@ router.get('/subcategories/:subCategoryId/vendors',  async (req, res) => {
       'vendorDetails.subCategory': subCategoryId
     });
 
+    // Get product counts for each vendor
+    const vendorIds = vendors.map(vendor => vendor._id);
+    const productCounts = await Product.aggregate([
+      {
+        $match: {
+          vendor: { $in: vendorIds },
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: '$vendor',
+          productCount: { $sum: 1 },
+          featuredProductCount: {
+            $sum: { $cond: ['$isFeatured', 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Create a map of vendor ID to product counts
+    const productCountMap = {};
+    productCounts.forEach(item => {
+      productCountMap[item._id.toString()] = {
+        totalProducts: item.productCount,
+        featuredProducts: item.featuredProductCount
+      };
+    });
+
+    // Format vendor data with complete shop information
+    const formattedVendors = vendors.map(vendor => {
+      const productInfo = productCountMap[vendor._id.toString()] || { totalProducts: 0, featuredProducts: 0 };
+      
+      return {
+        _id: vendor._id,
+        name: vendor.name,
+        phone: vendor.phone,
+        email: vendor.email,
+        profileImage: vendor.profileImage,
+        address: vendor.address,
+        isActive: vendor.isActive,
+        createdAt: vendor.createdAt,
+        updatedAt: vendor.updatedAt,
+        vendorDetails: {
+          shopName: vendor.vendorDetails.shopName,
+          shopDescription: vendor.vendorDetails.shopDescription,
+          shopImages: vendor.vendorDetails.shopImages || [],
+          shopAddress: vendor.vendorDetails.shopAddress,
+          shopContactNumber: vendor.vendorDetails.shopContactNumber,
+          shopEmail: vendor.vendorDetails.shopEmail,
+          shopWebsite: vendor.vendorDetails.shopWebsite,
+          shopTimings: vendor.vendorDetails.shopTimings,
+          mainCategory: vendor.vendorDetails.mainCategory,
+          subCategory: vendor.vendorDetails.subCategory,
+          averageRating: vendor.vendorDetails.averageRating || 0,
+          totalRatings: vendor.vendorDetails.totalRatings || 0,
+          isShopListed: vendor.vendorDetails.isShopListed,
+          shopListedAt: vendor.vendorDetails.shopListedAt,
+          subscription: vendor.vendorDetails.subscription,
+          businessHours: vendor.vendorDetails.businessHours,
+          services: vendor.vendorDetails.services || [],
+          specializations: vendor.vendorDetails.specializations || [],
+          certifications: vendor.vendorDetails.certifications || [],
+          awards: vendor.vendorDetails.awards || [],
+          socialMedia: vendor.vendorDetails.socialMedia || {},
+          paymentMethods: vendor.vendorDetails.paymentMethods || [],
+          deliveryOptions: vendor.vendorDetails.deliveryOptions || [],
+          returnPolicy: vendor.vendorDetails.returnPolicy,
+          warrantyInfo: vendor.vendorDetails.warrantyInfo
+        },
+        productInfo,
+        lastLogin: vendor.lastLogin
+      };
+    });
+
     // Check if user has favorited any of these vendors
-    let vendorsWithFavorites = vendors;
+    let vendorsWithFavorites = formattedVendors;
     if (req.user) {
       const userFavorites = req.user.customerDetails?.favorites || [];
-      vendorsWithFavorites = vendors.map(vendor => ({
+      vendorsWithFavorites = formattedVendors.map(vendor => ({
         ...vendor,
         isFavorited: userFavorites.some(fav => fav.vendor.toString() === vendor._id.toString())
       }));
@@ -345,10 +433,180 @@ router.get('/subcategories/:subCategoryId/vendors',  async (req, res) => {
 
 // ==================== VENDOR DETAILS ====================
 
+// Get vendors/shops with products by subcategory
+router.get('/subcategories/:subCategoryId/vendors-with-products', async (req, res) => {
+  try {
+    const { subCategoryId } = req.params;
+    const { page = 1, limit = 10, productLimit = 5, sortBy = 'createdAt', sortOrder = -1 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Validate ObjectId
+    if (!isValidObjectId(subCategoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subcategory ID format'
+      });
+    }
+
+    // Verify subcategory exists and is active
+    const subCategory = await SubCategory.findOne({ 
+      _id: subCategoryId,
+      isActive: true 
+    })
+    .populate('mainCategory', 'name icon description slug')
+    .lean();
+
+    if (!subCategory) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subcategory not found'
+      });
+    }
+
+    // Get vendors in this subcategory
+    const vendors = await User.find({
+      role: 'vendor',
+      isActive: true,
+      'vendorDetails.subscription.isActive': true,
+      'vendorDetails.subCategory': subCategoryId
+    })
+    .populate('vendorDetails.mainCategory', 'name icon description slug')
+    .populate('vendorDetails.subCategory', 'name image thumbnail description slug')
+    .select('-password -loginAttempts -lockUntil -email')
+    .sort({ [sortBy]: parseInt(sortOrder) })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
+    const total = await User.countDocuments({
+      role: 'vendor',
+      isActive: true,
+      'vendorDetails.subscription.isActive': true,
+      'vendorDetails.subCategory': subCategoryId
+    });
+
+    // Get products for each vendor
+    const vendorIds = vendors.map(vendor => vendor._id);
+    const products = await Product.find({
+      vendor: { $in: vendorIds },
+      isActive: true
+    })
+    .populate('category.mainCategory', 'name icon')
+    .populate('category.subCategory', 'name image thumbnail')
+    .sort({ isFeatured: -1, createdAt: -1 })
+    .select('name description price images primaryImage views isFeatured vendor')
+    .lean();
+
+    // Group products by vendor
+    const productsByVendor = {};
+    products.forEach(product => {
+      const vendorId = product.vendor.toString();
+      if (!productsByVendor[vendorId]) {
+        productsByVendor[vendorId] = [];
+      }
+      productsByVendor[vendorId].push(product);
+    });
+
+    // Format vendor data with products and complete shop information
+    const formattedVendors = vendors.map(vendor => {
+      const vendorProducts = productsByVendor[vendor._id.toString()] || [];
+      const featuredProducts = vendorProducts.filter(p => p.isFeatured).slice(0, parseInt(productLimit));
+      const recentProducts = vendorProducts
+        .filter(p => !p.isFeatured)
+        .slice(0, parseInt(productLimit) - featuredProducts.length);
+      
+      const displayProducts = [...featuredProducts, ...recentProducts];
+      
+      return {
+        _id: vendor._id,
+        name: vendor.name,
+        phone: vendor.phone,
+        email: vendor.email,
+        profileImage: vendor.profileImage,
+        address: vendor.address,
+        isActive: vendor.isActive,
+        createdAt: vendor.createdAt,
+        updatedAt: vendor.updatedAt,
+        vendorDetails: {
+          shopName: vendor.vendorDetails.shopName,
+          shopDescription: vendor.vendorDetails.shopDescription,
+          shopImages: vendor.vendorDetails.shopImages || [],
+          shopAddress: vendor.vendorDetails.shopAddress,
+          shopContactNumber: vendor.vendorDetails.shopContactNumber,
+          shopEmail: vendor.vendorDetails.shopEmail,
+          shopWebsite: vendor.vendorDetails.shopWebsite,
+          shopTimings: vendor.vendorDetails.shopTimings,
+          mainCategory: vendor.vendorDetails.mainCategory,
+          subCategory: vendor.vendorDetails.subCategory,
+          averageRating: vendor.vendorDetails.averageRating || 0,
+          totalRatings: vendor.vendorDetails.totalRatings || 0,
+          isShopListed: vendor.vendorDetails.isShopListed,
+          shopListedAt: vendor.vendorDetails.shopListedAt,
+          subscription: vendor.vendorDetails.subscription,
+          businessHours: vendor.vendorDetails.businessHours,
+          services: vendor.vendorDetails.services || [],
+          specializations: vendor.vendorDetails.specializations || [],
+          certifications: vendor.vendorDetails.certifications || [],
+          awards: vendor.vendorDetails.awards || [],
+          socialMedia: vendor.vendorDetails.socialMedia || {},
+          paymentMethods: vendor.vendorDetails.paymentMethods || [],
+          deliveryOptions: vendor.vendorDetails.deliveryOptions || [],
+          returnPolicy: vendor.vendorDetails.returnPolicy,
+          warrantyInfo: vendor.vendorDetails.warrantyInfo
+        },
+        productInfo: {
+          totalProducts: vendorProducts.length,
+          featuredProducts: vendorProducts.filter(p => p.isFeatured).length,
+          displayProducts: displayProducts
+        },
+        lastLogin: vendor.lastLogin
+      };
+    });
+
+    // Check if user has favorited any of these vendors
+    let vendorsWithFavorites = formattedVendors;
+    if (req.user) {
+      const userFavorites = req.user.customerDetails?.favorites || [];
+      vendorsWithFavorites = formattedVendors.map(vendor => ({
+        ...vendor,
+        isFavorited: userFavorites.some(fav => fav.vendor.toString() === vendor._id.toString())
+      }));
+    }
+
+    res.json({
+      success: true,
+      data: {
+        subCategory,
+        vendors: vendorsWithFavorites
+      },
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get vendors with products by subcategory error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
 // Get vendor details
-router.get('/vendors/:id', optionalAuth, validateParams(commonSchemas.id), async (req, res) => {
+router.get('/vendors/:id',  async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate ObjectId
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid vendor ID format'
+      });
+    }
 
     const vendor = await User.findOne({ 
       _id: id, 
@@ -444,7 +702,7 @@ router.get('/vendors/:id', optionalAuth, validateParams(commonSchemas.id), async
 });
 
 // Get vendor products
-router.get('/vendors/:id/products', validateParams(commonSchemas.id), validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/vendors/:id/products', async (req, res) => {
   try {
     const { id } = req.params;
     const { page = 1, limit = 10 } = req.query;
@@ -503,7 +761,7 @@ router.get('/vendors/:id/products', validateParams(commonSchemas.id), validateQu
 // ==================== PRODUCT DETAILS ====================
 
 // Get product details
-router.get('/products/:id', optionalAuth, validateParams(commonSchemas.id), async (req, res) => {
+router.get('/products/:id', optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -556,7 +814,7 @@ router.get('/products/:id', optionalAuth, validateParams(commonSchemas.id), asyn
 // ==================== CUSTOMER FAVORITES (AUTHENTICATED) ====================
 
 // Add vendor to favorites
-router.post('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLogin, validateParams(commonSchemas.id), async (req, res) => {
+router.post('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user._id;
@@ -612,7 +870,7 @@ router.post('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLogin
 });
 
 // Remove vendor from favorites
-router.delete('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLogin, validateParams(commonSchemas.id), async (req, res) => {
+router.delete('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user._id;
@@ -638,7 +896,7 @@ router.delete('/favorites/vendors/:id', verifyToken, customerOnly, updateLastLog
 });
 
 // Get customer favorites
-router.get('/favorites/vendors', verifyToken, customerOnly, updateLastLogin, validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/favorites/vendors', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const customerId = req.user._id;
     const { page = 1, limit = 10 } = req.query;
@@ -688,7 +946,7 @@ router.get('/favorites/vendors', verifyToken, customerOnly, updateLastLogin, val
 });
 
 // Add product to favorites
-router.post('/favorites/products/:id', verifyToken, customerOnly, updateLastLogin, validateParams(commonSchemas.id), async (req, res) => {
+router.post('/favorites/products/:id', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user._id;
@@ -742,7 +1000,7 @@ router.post('/favorites/products/:id', verifyToken, customerOnly, updateLastLogi
 });
 
 // Remove product from favorites
-router.delete('/favorites/products/:id', verifyToken, customerOnly, updateLastLogin, validateParams(commonSchemas.id), async (req, res) => {
+router.delete('/favorites/products/:id', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const { id } = req.params;
     const customerId = req.user._id;
@@ -768,7 +1026,7 @@ router.delete('/favorites/products/:id', verifyToken, customerOnly, updateLastLo
 });
 
 // Get favorite products
-router.get('/favorites/products', verifyToken, customerOnly, updateLastLogin, validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/favorites/products', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const customerId = req.user._id;
     const { page = 1, limit = 10 } = req.query;
@@ -871,7 +1129,7 @@ router.get('/preferences', verifyToken, customerOnly, updateLastLogin, async (re
 // ==================== NEARBY VENDORS ====================
 
 // Get nearby vendors by pincode
-router.get('/nearby/:pincode', optionalAuth, validateParams(commonSchemas.pincode), validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/nearby/:pincode', optionalAuth, async (req, res) => {
   try {
     const { pincode } = req.params;
     const { page = 1, limit = 10 } = req.query;
@@ -1027,7 +1285,7 @@ router.put('/vendors/:id/rate', verifyToken, customerOnly, updateLastLogin, asyn
 });
 
 // Delete vendor rating
-router.delete('/vendors/:id/rate', verifyToken, customerOnly, updateLastLogin, validateParams(commonSchemas.id), async (req, res) => {
+router.delete('/vendors/:id/rate', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const { id: vendorId } = req.params;
     const customerId = req.user._id;
@@ -1059,7 +1317,7 @@ router.delete('/vendors/:id/rate', verifyToken, customerOnly, updateLastLogin, v
 });
 
 // Get vendor ratings and reviews
-router.get('/vendors/:id/ratings', optionalAuth, validateParams(commonSchemas.id), validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/vendors/:id/ratings', optionalAuth, async (req, res) => {
   try {
     const { id: vendorId } = req.params;
     const { page = 1, limit = 10, sortBy = 'createdAt', sortOrder = -1 } = req.query;
@@ -1179,7 +1437,7 @@ router.post('/ratings/:id/helpful', verifyToken, customerOnly, updateLastLogin, 
 });
 
 // Get customer's ratings
-router.get('/my-ratings', verifyToken, customerOnly, updateLastLogin, validateQuery(commonSchemas.pagination), async (req, res) => {
+router.get('/my-ratings', verifyToken, customerOnly, updateLastLogin, async (req, res) => {
   try {
     const customerId = req.user._id;
     const { page = 1, limit = 10 } = req.query;
