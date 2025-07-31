@@ -41,9 +41,9 @@ app.use(compression());
 // Logging middleware
 app.use(logger('dev'));
 
-// Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// Body parsing middleware - Increased to 100MB for file uploads
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: false, limit: '100mb' }));
 
 // Cookie parser
 app.use(cookieParser());
@@ -82,12 +82,41 @@ app.use('*', (req, res) => {
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
 
-  // Handle multer errors
+  // Handle multer errors with detailed error messages
   if (err.name === 'MulterError') {
+    let errorMessage = 'File upload error';
+    
+    switch (err.code) {
+      case 'LIMIT_FILE_SIZE':
+        errorMessage = 'File size too large. Maximum allowed size is 100MB.';
+        break;
+      case 'LIMIT_FILE_COUNT':
+        errorMessage = 'Too many files uploaded. Please reduce the number of files.';
+        break;
+      case 'LIMIT_UNEXPECTED_FILE':
+        errorMessage = 'Unexpected file field. Please check your form configuration.';
+        break;
+      case 'LIMIT_PART_COUNT':
+        errorMessage = 'Too many parts in the request.';
+        break;
+      case 'LIMIT_FIELD_KEY':
+        errorMessage = 'Field name too long.';
+        break;
+      case 'LIMIT_FIELD_VALUE':
+        errorMessage = 'Field value too long.';
+        break;
+      case 'LIMIT_FIELD_COUNT':
+        errorMessage = 'Too many fields in the request.';
+        break;
+      default:
+        errorMessage = err.message || 'File upload error occurred.';
+    }
+    
     return res.status(400).json({
       success: false,
-      message: 'File upload error',
-      error: err.message
+      message: errorMessage,
+      error: err.message,
+      code: err.code
     });
   }
 

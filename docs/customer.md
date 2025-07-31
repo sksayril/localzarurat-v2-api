@@ -15,6 +15,347 @@ This document describes the customer-facing API endpoints for browsing vendors, 
 
 ## Endpoints
 
+### Customer Authentication
+
+#### Customer Signup
+```
+POST /auth/register
+```
+Register a new customer account.
+
+**Base URL:** `/api/auth`
+
+**Body:**
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "securepassword123",
+  "phone": "+1234567890",
+  "role": "customer",
+  "address": {
+    "street": "123 Main St",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "pincode": "400001"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "data": {
+    "user": {
+      "_id": "user_id",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "+1234567890",
+      "role": "customer",
+      "address": {
+        "street": "123 Main St",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "pincode": "400001"
+      },
+      "isEmailVerified": false,
+      "isPhoneVerified": false,
+      "isActive": true,
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    "token": "jwt_token_here"
+  }
+}
+```
+
+#### Customer Login
+```
+POST /auth/login
+```
+Login with email and password.
+
+**Base URL:** `/api/auth`
+
+**Body:**
+```json
+{
+  "email": "john@example.com",
+  "password": "securepassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "_id": "user_id",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "+1234567890",
+      "role": "customer",
+      "address": {
+        "street": "123 Main St",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "pincode": "400001"
+      },
+      "isEmailVerified": false,
+      "isPhoneVerified": false,
+      "isActive": true,
+      "lastLogin": "2024-01-01T00:00:00.000Z",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    "token": "jwt_token_here"
+  }
+}
+```
+
+#### Forgot Password - Step 1: Get Security Questions
+```
+POST /auth/forgot-password
+```
+Get security questions for password reset.
+
+**Base URL:** `/api/auth`
+
+**Body:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Security questions retrieved successfully",
+  "data": {
+    "question1": "What was your first pet's name?",
+    "question2": "In which city were you born?"
+  }
+}
+```
+
+#### Forgot Password - Step 2: Verify Security Questions
+```
+POST /auth/verify-security-questions
+```
+Verify answers to security questions.
+
+**Base URL:** `/api/auth`
+
+**Body:**
+```json
+{
+  "email": "john@example.com",
+  "answer1": "Buddy",
+  "answer2": "Mumbai"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Security questions verified successfully"
+}
+```
+
+#### Forgot Password - Step 3: Reset Password
+```
+POST /auth/reset-password
+```
+Reset password using security question answers.
+
+**Base URL:** `/api/auth`
+
+**Body:**
+```json
+{
+  "email": "john@example.com",
+  "answer1": "Buddy",
+  "answer2": "Mumbai",
+  "newPassword": "newsecurepassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password reset successfully"
+}
+```
+
+#### Get Customer Profile
+```
+GET /auth/profile
+```
+Get current customer profile information.
+
+**Base URL:** `/api/auth`
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "user_id",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "role": "customer",
+    "address": {
+      "street": "123 Main St",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400001"
+    },
+    "profileImage": "profile_image_url",
+    "isEmailVerified": false,
+    "isPhoneVerified": false,
+    "isActive": true,
+    "lastLogin": "2024-01-01T00:00:00.000Z",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+#### Update Customer Profile
+```
+PUT /auth/profile
+```
+Update customer profile information.
+
+**Base URL:** `/api/auth`
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Body:**
+```json
+{
+  "name": "John Smith",
+  "phone": "+1234567891",
+  "profileImage": "new_profile_image_url",
+  "address": {
+    "street": "456 Oak Ave",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "pincode": "400002"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "_id": "user_id",
+    "name": "John Smith",
+    "email": "john@example.com",
+    "phone": "+1234567891",
+    "role": "customer",
+    "address": {
+      "street": "456 Oak Ave",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400002"
+    },
+    "profileImage": "new_profile_image_url",
+    "isEmailVerified": false,
+    "isPhoneVerified": false,
+    "isActive": true,
+    "lastLogin": "2024-01-01T00:00:00.000Z",
+    "createdAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+#### Change Password
+```
+PUT /auth/change-password
+```
+Change customer password.
+
+**Base URL:** `/api/auth`
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Body:**
+```json
+{
+  "currentPassword": "oldpassword123",
+  "newPassword": "newpassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password changed successfully"
+}
+```
+
+#### Logout
+```
+POST /auth/logout
+```
+Logout customer (client-side token removal).
+
+**Base URL:** `/api/auth`
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Logged out successfully"
+}
+```
+
+#### Verify Token
+```
+GET /auth/verify-token
+```
+Verify if the current token is valid.
+
+**Base URL:** `/api/auth`
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Token is valid",
+  "data": {
+    "user": {
+      "_id": "user_id",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "customer"
+    }
+  }
+}
+```
+
 ### Categories & Subcategories
 
 #### Get All Main Categories

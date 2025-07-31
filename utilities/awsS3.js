@@ -49,7 +49,7 @@ const uploadToS3 = (baseFolder = 'uploads', subFolders = []) => {
       }
     }),
     limits: {
-      fileSize: 200 * 1024 * 1024, // 200MB limit
+      fileSize: 100 * 1024 * 1024, // 100MB limit
       files: 20 // Maximum 20 files
     },
     fileFilter: (req, file, cb) => {
@@ -100,7 +100,7 @@ const uploadSingleFile = (baseFolder = 'uploads', subFolders = [], fieldName = '
       }
     }),
     limits: {
-      fileSize: 200 * 1024 * 1024, // 200MB limit
+      fileSize: 100 * 1024 * 1024, // 100MB limit
     },
     fileFilter: (req, file, cb) => {
       // Check file type
@@ -163,7 +163,7 @@ const uploadSubcategoryImages = (baseFolder = 'uploads/subcategories', subFolder
       }
     }),
     limits: {
-      fileSize: 200 * 1024 * 1024, // 200MB limit
+      fileSize: 100 * 1024 * 1024, // 100MB limit
       files: 2 // Maximum 2 files (image and thumbnail)
     },
     fileFilter: (req, file, cb) => {
