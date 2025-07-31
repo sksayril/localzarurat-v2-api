@@ -672,7 +672,9 @@ router.post('/shop/listing', uploadShopImages('vendor-shop'), async (req, res) =
       shopAddressLine1,
       shopAddressLine2,
       shopLocation,
-      nearbyLocation
+      nearbyLocation,
+      latitude,
+      longitude
     } = req.body;
 
     // Check if vendor has active subscription
@@ -782,7 +784,11 @@ router.post('/shop/listing', uploadShopImages('vendor-shop'), async (req, res) =
           addressLine1: shopAddressLine1,
           addressLine2: shopAddressLine2 || '',
           location: shopLocation,
-          nearbyLocation: nearbyLocation || ''
+          nearbyLocation: nearbyLocation || '',
+          coordinates: latitude && longitude ? {
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude)
+          } : null
         },
         'vendorDetails.isShopListed': true,
         'vendorDetails.shopListedAt': new Date()
@@ -875,7 +881,10 @@ router.get('/shop/listing', async (req, res) => {
           shopMetaKeywords: vendor.vendorDetails.shopMetaKeywords,
           shopMetaTags: vendor.vendorDetails.shopMetaTags,
           shopImages: vendor.vendorDetails.shopImages,
-          address: vendor.vendorDetails.shopAddress,
+          address: {
+            ...vendor.vendorDetails.shopAddress,
+            coordinates: vendor.vendorDetails.shopAddress?.coordinates || null
+          },
           isListed: vendor.vendorDetails.isShopListed,
           listedAt: vendor.vendorDetails.shopListedAt,
           category: {
@@ -997,14 +1006,20 @@ router.post('/shop/listing/update', uploadShopImages('vendor-shop'), async (req,
     if (updateData.subCategory) updateObject['vendorDetails.subCategory'] = updateData.subCategory;
 
     // Handle address updates
-    if (updateData.shopPincode || updateData.shopAddressLine1 || updateData.shopAddressLine2 || updateData.shopLocation || updateData.nearbyLocation) {
+    if (updateData.shopPincode || updateData.shopAddressLine1 || updateData.shopAddressLine2 || updateData.shopLocation || updateData.nearbyLocation || updateData.latitude || updateData.longitude) {
       const currentAddress = vendor.vendorDetails.shopAddress || {};
+      const currentCoordinates = currentAddress.coordinates || {};
+      
       updateObject['vendorDetails.shopAddress'] = {
         pincode: updateData.shopPincode || currentAddress.pincode,
         addressLine1: updateData.shopAddressLine1 || currentAddress.addressLine1,
         addressLine2: updateData.shopAddressLine2 || currentAddress.addressLine2 || '',
         location: updateData.shopLocation || currentAddress.location,
-        nearbyLocation: updateData.nearbyLocation || currentAddress.nearbyLocation || ''
+        nearbyLocation: updateData.nearbyLocation || currentAddress.nearbyLocation || '',
+        coordinates: (updateData.latitude && updateData.longitude) ? {
+          latitude: parseFloat(updateData.latitude),
+          longitude: parseFloat(updateData.longitude)
+        } : (currentCoordinates.latitude && currentCoordinates.longitude ? currentCoordinates : null)
       };
     }
 

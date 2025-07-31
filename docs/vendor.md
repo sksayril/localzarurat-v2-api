@@ -608,7 +608,7 @@ Authorization: Bearer <your-jwt-token>
 ### Step 6: List Your Shop (Requires Active Subscription)
 **POST** `/vendor/shop/listing`
 
-**Note:** Main category, sub category, and shop address details are required fields. The sub category must belong to the selected main category. Address fields include pincode, address line 1, and location which are mandatory. For file uploads, use the field name `shopImages` for shop images (maximum 10 images, 200MB each).
+**Note:** Main category, sub category, and shop address details are required fields. The sub category must belong to the selected main category. Address fields include pincode, address line 1, and location which are mandatory. Optional coordinates (latitude and longitude) can be provided for location-based services. For file uploads, use the field name `shopImages` for shop images (maximum 10 images, 200MB each).
 
 **Headers:**
 ```
@@ -636,6 +636,8 @@ shopAddressLine1: Shop No. 123, Electronics Plaza
 shopAddressLine2: Near Andheri Station
 shopLocation: Andheri West
 nearbyLocation: Andheri Station, Metro Station
+latitude: 19.0760
+longitude: 72.8777
 shopImages: [file upload 1]
 shopImages: [file upload 2]
 shopImages: [file upload 3]
@@ -677,7 +679,11 @@ shopImages: [file upload 3]
         "addressLine1": "Shop No. 123, Electronics Plaza",
         "addressLine2": "Near Andheri Station",
         "location": "Andheri West",
-        "nearbyLocation": "Andheri Station, Metro Station"
+        "nearbyLocation": "Andheri Station, Metro Station",
+        "coordinates": {
+          "latitude": 19.0760,
+          "longitude": 72.8777
+        }
       },
       "isListed": true,
       "listedAt": "2024-01-15T10:30:00.000Z"
@@ -731,7 +737,11 @@ Authorization: Bearer <your-jwt-token>
         "addressLine1": "Shop No. 123, Electronics Plaza",
         "addressLine2": "Near Andheri Station",
         "location": "Andheri West",
-        "nearbyLocation": "Andheri Station, Metro Station"
+        "nearbyLocation": "Andheri Station, Metro Station",
+        "coordinates": {
+          "latitude": 19.0760,
+          "longitude": 72.8777
+        }
       },
       "isListed": true,
       "listedAt": "2024-01-15T10:30:00.000Z"
@@ -753,7 +763,7 @@ Authorization: Bearer <your-jwt-token>
 ### Update Shop Listing
 **POST** `/vendor/shop/listing/update`
 
-**Note:** This API allows updating shop details including name, description, meta information, categories, address, and images. You can update individual fields or multiple fields at once. For file uploads, use the field name `shopImages` for shop images (maximum 10 images, 200MB each).
+**Note:** This API allows updating shop details including name, description, meta information, categories, address, coordinates, and images. You can update individual fields or multiple fields at once. Optional coordinates (latitude and longitude) can be provided for location-based services. For file uploads, use the field name `shopImages` for shop images (maximum 10 images, 200MB each).
 
 **Headers:**
 ```
@@ -778,6 +788,8 @@ shopAddressLine1: Shop No. 456, New Electronics Plaza
 shopAddressLine2: Near Metro Station
 shopLocation: Andheri East
 nearbyLocation: Metro Station, Bus Stand
+latitude: 19.0760
+longitude: 72.8777
 shopImages: [new file upload 1]
 shopImages: [new file upload 2]
 ```
@@ -819,7 +831,11 @@ shopImages: [new file upload 2]
         "addressLine1": "Shop No. 456, New Electronics Plaza",
         "addressLine2": "Near Metro Station",
         "location": "Andheri East",
-        "nearbyLocation": "Metro Station, Bus Stand"
+        "nearbyLocation": "Metro Station, Bus Stand",
+        "coordinates": {
+          "latitude": 19.0760,
+          "longitude": 72.8777
+        }
       },
       "isListed": true,
       "listedAt": "2024-01-15T10:30:00.000Z"

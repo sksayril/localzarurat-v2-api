@@ -371,7 +371,10 @@ router.get('/subcategories/:subCategoryId/vendors', async (req, res) => {
           shopName: vendor.vendorDetails.shopName,
           shopDescription: vendor.vendorDetails.shopDescription,
           shopImages: vendor.vendorDetails.shopImages || [],
-          shopAddress: vendor.vendorDetails.shopAddress,
+          shopAddress: {
+            ...vendor.vendorDetails.shopAddress,
+            coordinates: vendor.vendorDetails.shopAddress?.coordinates || null
+          },
           shopContactNumber: vendor.vendorDetails.shopContactNumber,
           shopEmail: vendor.vendorDetails.shopEmail,
           shopWebsite: vendor.vendorDetails.shopWebsite,
@@ -531,7 +534,10 @@ router.get('/subcategories/:subCategoryId/vendors-with-products', async (req, re
           shopName: vendor.vendorDetails.shopName,
           shopDescription: vendor.vendorDetails.shopDescription,
           shopImages: vendor.vendorDetails.shopImages || [],
-          shopAddress: vendor.vendorDetails.shopAddress,
+          shopAddress: {
+            ...vendor.vendorDetails.shopAddress,
+            coordinates: vendor.vendorDetails.shopAddress?.coordinates || null
+          },
           shopContactNumber: vendor.vendorDetails.shopContactNumber,
           shopEmail: vendor.vendorDetails.shopEmail,
           shopWebsite: vendor.vendorDetails.shopWebsite,
@@ -671,7 +677,10 @@ router.get('/vendors/:id',  async (req, res) => {
         shopName: vendor.vendorDetails.shopName,
         shopDescription: vendor.vendorDetails.shopDescription,
         shopImages: vendor.vendorDetails.shopImages,
-        shopAddress: vendor.vendorDetails.shopAddress,
+        shopAddress: {
+          ...vendor.vendorDetails.shopAddress,
+          coordinates: vendor.vendorDetails.shopAddress?.coordinates || null
+        },
         mainCategory: vendor.vendorDetails.mainCategory,
         subCategory: vendor.vendorDetails.subCategory,
         averageRating: vendor.vendorDetails.averageRating || 0,

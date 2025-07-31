@@ -492,7 +492,11 @@ Returns all vendors/shops in a specific main category.
           "shopAddress": {
             "pincode": "400001",
             "addressLine1": "123 Main St",
-            "location": "Andheri West"
+            "location": "Andheri West",
+            "coordinates": {
+              "latitude": 19.0760,
+              "longitude": 72.8777
+            }
           },
           "mainCategory": {
             "_id": "category_id",
@@ -577,7 +581,11 @@ Returns all vendors/shops in a specific subcategory.
           "shopAddress": {
             "pincode": "400001",
             "addressLine1": "123 Main St",
-            "location": "Andheri West"
+            "location": "Andheri West",
+            "coordinates": {
+              "latitude": 19.0760,
+              "longitude": 72.8777
+            }
           },
           "mainCategory": {
             "_id": "category_id",
@@ -643,7 +651,11 @@ Returns detailed information about a specific vendor including products, ratings
         "shopAddress": {
           "pincode": "400001",
           "addressLine1": "123 Main St",
-          "location": "Andheri West"
+          "location": "Andheri West",
+          "coordinates": {
+            "latitude": 19.0760,
+            "longitude": 72.8777
+          }
         },
         "mainCategory": {
           "_id": "category_id",

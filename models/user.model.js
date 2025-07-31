@@ -128,6 +128,19 @@ const userSchema = new mongoose.Schema({
         type: String,
         trim: true,
         default: ''
+      },
+      // Geographic coordinates for location-based services
+      coordinates: {
+        latitude: {
+          type: Number,
+          min: -90,
+          max: 90
+        },
+        longitude: {
+          type: Number,
+          min: -180,
+          max: 180
+        }
       }
     },
     isShopListed: {
