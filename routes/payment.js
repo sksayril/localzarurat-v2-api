@@ -5,6 +5,8 @@ const User = require('../models/user.model');
 const Subscription = require('../models/subscription.model');
 const ReferralCommission = require('../models/referralCommission.model');
 const SystemSettings = require('../models/systemSettings.model');
+const Employee = require('../models/employee.model');
+const EmployeeCommission = require('../models/employeeCommission.model');
 const { verifyToken } = require('../middleware/auth');
 const { verifySubscriptionSignature, verifyPaymentSignature, getSubscriptionDetails, getPaymentDetails } = require('../utilities/razorpay');
 
@@ -123,6 +125,68 @@ router.post('/webhook/subscription.activated', verifyWebhookSignature, async (re
           await referralCommission.save();
 
           console.log(`Referral commission created: ${commissionAmount} for referrer ${referrer.name}`);
+        }
+      }
+    }
+
+    // Process employee commission if vendor is assigned to an employee
+    if (vendor.assignedEmployee) {
+      const assignedEmployee = await Employee.findById(vendor.assignedEmployee);
+      
+      if (assignedEmployee) {
+        let targetEmployee = null;
+        let commissionPercentage = 0;
+        
+        if (assignedEmployee.role === 'super_employee' && assignedEmployee.commissionSettings.isActive) {
+          // Direct super employee assignment
+          targetEmployee = assignedEmployee;
+          commissionPercentage = assignedEmployee.commissionSettings.percentage;
+        } else if (assignedEmployee.role === 'employee' && assignedEmployee.superEmployee) {
+          // Regular employee assignment - commission goes to super employee
+          const superEmployee = await Employee.findById(assignedEmployee.superEmployee);
+          if (superEmployee && superEmployee.commissionSettings.isActive) {
+            targetEmployee = superEmployee;
+            // Use the regular employee's commission percentage
+            commissionPercentage = assignedEmployee.employeeCommissionPercentage || 0;
+          }
+        }
+
+        if (targetEmployee && commissionPercentage > 0) {
+          const commissionAmount = (dbSubscription.amount * commissionPercentage) / 100;
+
+          // Create employee commission record
+          const employeeCommission = new EmployeeCommission({
+            employee: targetEmployee._id,
+            seller: vendor._id,
+            subscription: dbSubscription._id,
+            commission: {
+              percentage: commissionPercentage,
+              amount: commissionAmount,
+              subscriptionAmount: dbSubscription.amount
+            },
+            district: {
+              name: vendor.vendorDetails.vendorAddress?.city || 'Unknown',
+              state: vendor.vendorDetails.vendorAddress?.state || 'Unknown'
+            },
+            period: {
+              startDate: dbSubscription.startDate,
+              endDate: dbSubscription.endDate
+            },
+            status: 'pending' // Admin needs to approve
+          });
+
+          await employeeCommission.save();
+
+          // Update employee statistics
+          if (assignedEmployee.role === 'employee') {
+            assignedEmployee.statistics.totalSellersAssigned += 1;
+            await assignedEmployee.save();
+          }
+          
+          targetEmployee.statistics.totalSellersAssigned += 1;
+          await targetEmployee.save();
+
+          console.log(`Employee commission created: ${commissionAmount} for ${targetEmployee.role} ${targetEmployee.name} (${targetEmployee.employeeId}) from seller assigned to ${assignedEmployee.employeeId}`);
         }
       }
     }

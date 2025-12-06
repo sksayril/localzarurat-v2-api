@@ -16,7 +16,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'vendor', 'customer'],
+    enum: ['admin', 'vendor', 'customer', 'super_employee', 'employee'],
     default: 'customer'
   },
   name: {
@@ -96,6 +96,19 @@ const userSchema = new mongoose.Schema({
       }
     }
   },
+  // Employee code for seller registration
+  employeeCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    default: null
+  },
+  assignedEmployee: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Employee',
+    default: null
+  },
+  
   // Vendor specific fields
   vendorDetails: {
     // Shop listing information
@@ -357,7 +370,7 @@ const userSchema = new mongoose.Schema({
   adminDetails: {
     permissions: {
       type: [String],
-      enum: ['dashboard', 'vendors', 'kyc', 'withdrawals', 'categories', 'subscriptions', 'referrals', 'settings', 'all'],
+      enum: ['dashboard', 'vendors', 'kyc', 'withdrawals', 'categories', 'subscriptions', 'referrals', 'settings', 'employees', 'districts', 'all'],
       default: ['all']
     },
     lastLogin: {
@@ -376,6 +389,32 @@ const userSchema = new mongoose.Schema({
       type: String,
       enum: ['full', 'limited', 'readonly'],
       default: 'full'
+    }
+  },
+  
+  // Employee specific fields (for users with employee role)
+  employeeDetails: {
+    employeeId: {
+      type: String,
+      trim: true,
+      uppercase: true
+    },
+    superEmployee: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Employee'
+    },
+    assignedDistricts: [{
+      district: String,
+      state: String,
+      assignedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    permissions: {
+      type: [String],
+      enum: ['view_sellers', 'manage_sellers', 'view_commissions', 'manage_commissions'],
+      default: ['view_sellers']
     }
   },
   lastLogin: {
@@ -468,6 +507,32 @@ userSchema.methods.hasActiveSubscription = function() {
 // Check if vendor can list shop
 userSchema.methods.canListShop = function() {
   return this.hasActiveSubscription() && this.vendorDetails.isShopListed === true;
+};
+
+// Validate employee code
+userSchema.statics.validateEmployeeCode = async function(employeeCode) {
+  if (!employeeCode) return { valid: false, message: 'Employee code is required' };
+  
+  const Employee = mongoose.model('Employee');
+  const employee = await Employee.findOne({ 
+    employeeId: employeeCode.toUpperCase(),
+    isActive: true 
+  });
+  
+  if (!employee) {
+    return { valid: false, message: 'Invalid employee code' };
+  }
+  
+  return { 
+    valid: true, 
+    employee: employee,
+    message: 'Valid employee code' 
+  };
+};
+
+// Check if user is assigned to an employee
+userSchema.methods.isAssignedToEmployee = function() {
+  return !!(this.assignedEmployee || this.employeeCode);
 };
 
 module.exports = mongoose.model('User', userSchema);

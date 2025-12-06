@@ -15,6 +15,9 @@ const ReferralCommission = require('../models/referralCommission.model');
 const SystemSettings = require('../models/systemSettings.model');
 const VendorRating = require('../models/vendorRating.model');
 const VendorCommissionSettings = require('../models/vendorCommissionSettings.model');
+const Employee = require('../models/employee.model');
+const EmployeeCommission = require('../models/employeeCommission.model');
+const District = require('../models/district.model');
 const { verifyToken, adminOnly, updateLastLogin } = require('../middleware/auth');
 const { validateQuery, validateParams, commonSchemas } = require('../middleware/validation');
 const { uploadSingleImage, uploadMultipleImages, uploadSubcategoryImages } = require('../utilities/awsS3');
@@ -3282,6 +3285,676 @@ router.get('/subscriptions/statistics', async (req, res) => {
     });
   } catch (error) {
     console.error('Get subscription statistics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// ==================== EMPLOYEE MANAGEMENT ====================
+
+// Create super employee
+router.post('/employees/super-employee/create', async (req, res) => {
+  try {
+    const { name, email, phone, password, assignedDistricts, commissionPercentage } = req.body;
+    const adminId = req.user._id;
+
+    // Validate required fields
+    if (!name || !email || !phone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, phone, and password are required'
+      });
+    }
+
+    // Check if email already exists
+    const existingEmployee = await Employee.findOne({ email: email.toLowerCase() });
+    if (existingEmployee) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee with this email already exists'
+      });
+    }
+
+    // Check if phone already exists
+    const existingPhone = await Employee.findOne({ phone });
+    if (existingPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee with this phone number already exists'
+      });
+    }
+
+    // Create new super employee
+    const superEmployee = new Employee({
+      name,
+      email: email.toLowerCase(),
+      phone,
+      password,
+      role: 'super_employee',
+      assignedDistricts: assignedDistricts || [],
+      commissionSettings: {
+        percentage: commissionPercentage || 0,
+        isActive: true,
+        setBy: adminId
+      },
+      createdBy: adminId
+    });
+
+    await superEmployee.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Super employee created successfully',
+      data: {
+        _id: superEmployee._id,
+        employeeId: superEmployee.employeeId,
+        name: superEmployee.name,
+        email: superEmployee.email,
+        phone: superEmployee.phone,
+        role: superEmployee.role,
+        assignedDistricts: superEmployee.assignedDistricts,
+        commissionSettings: superEmployee.commissionSettings
+      }
+    });
+  } catch (error) {
+    console.error('Create super employee error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get all employees
+router.get('/employees', validateQuery(commonSchemas.pagination), async (req, res) => {
+  try {
+    const { page = 1, limit = 10, role, status } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (role && role !== 'all') {
+      query.role = role;
+    }
+    if (status && status !== 'all') {
+      query.isActive = status === 'active';
+    }
+
+    const employees = await Employee.find(query)
+      .populate('superEmployee', 'employeeId name email')
+      .populate('createdBy', 'name email')
+      .select('-password -loginAttempts -lockUntil')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await Employee.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: employees,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    console.error('Get employees error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get employee details
+router.get('/employees/:employeeId', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+
+    const employee = await Employee.findById(employeeId)
+      .populate('superEmployee', 'employeeId name email')
+      .populate('createdBy', 'name email')
+      .select('-password -loginAttempts -lockUntil');
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Get assigned sellers count
+    const assignedSellers = await User.countDocuments({
+      assignedEmployee: employeeId,
+      role: 'vendor',
+      isActive: true
+    });
+
+    // Get commission statistics
+    const commissionStats = await EmployeeCommission.aggregate([
+      { $match: { employee: new mongoose.Types.ObjectId(employeeId) } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$commission.amount' }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        employee,
+        statistics: {
+          assignedSellers,
+          commissionStats
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get employee details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Update employee status
+router.post('/employees/:employeeId/status', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { isActive } = req.body;
+    const adminId = req.user._id;
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isActive must be a boolean value'
+      });
+    }
+
+    const employee = await Employee.findByIdAndUpdate(
+      employeeId,
+      { 
+        isActive,
+        updatedBy: adminId
+      },
+      { new: true }
+    )
+    .populate('superEmployee', 'employeeId name email')
+    .select('-password -loginAttempts -lockUntil');
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Employee ${isActive ? 'activated' : 'deactivated'} successfully`,
+      data: employee
+    });
+  } catch (error) {
+    console.error('Update employee status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Assign districts to employee
+router.post('/employees/:employeeId/districts', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { districts } = req.body;
+    const adminId = req.user._id;
+
+    if (!districts || !Array.isArray(districts)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Districts array is required'
+      });
+    }
+
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Add new districts
+    const newDistricts = districts.map(district => ({
+      district: district.district,
+      state: district.state,
+      assignedAt: new Date(),
+      assignedBy: adminId
+    }));
+
+    employee.assignedDistricts.push(...newDistricts);
+    employee.updatedBy = adminId;
+    await employee.save();
+
+    res.json({
+      success: true,
+      message: 'Districts assigned successfully',
+      data: {
+        employee: {
+          _id: employee._id,
+          employeeId: employee.employeeId,
+          name: employee.name,
+          assignedDistricts: employee.assignedDistricts
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Assign districts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Remove districts from employee
+router.delete('/employees/:employeeId/districts', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { districtIds } = req.body;
+    const adminId = req.user._id;
+
+    if (!districtIds || !Array.isArray(districtIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'District IDs array is required'
+      });
+    }
+
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    // Remove districts
+    employee.assignedDistricts = employee.assignedDistricts.filter(
+      (district, index) => !districtIds.includes(index)
+    );
+    employee.updatedBy = adminId;
+    await employee.save();
+
+    res.json({
+      success: true,
+      message: 'Districts removed successfully',
+      data: {
+        employee: {
+          _id: employee._id,
+          employeeId: employee.employeeId,
+          name: employee.name,
+          assignedDistricts: employee.assignedDistricts
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Remove districts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Set commission percentage for super employee
+router.post('/employees/:employeeId/commission', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { commissionPercentage } = req.body;
+    const adminId = req.user._id;
+
+    if (!commissionPercentage || commissionPercentage < 0 || commissionPercentage > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid commission percentage (0-100) is required'
+      });
+    }
+
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+
+    if (employee.role !== 'super_employee') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only super employees can have commission settings'
+      });
+    }
+
+    employee.commissionSettings.percentage = commissionPercentage;
+    employee.commissionSettings.setBy = adminId;
+    employee.commissionSettings.setAt = new Date();
+    employee.updatedBy = adminId;
+    await employee.save();
+
+    res.json({
+      success: true,
+      message: `Commission set to ${commissionPercentage}% for super employee`,
+      data: {
+        employee: {
+          _id: employee._id,
+          employeeId: employee.employeeId,
+          name: employee.name,
+          commissionSettings: employee.commissionSettings
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Set employee commission error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// ==================== DISTRICT MANAGEMENT ====================
+
+// Create district
+router.post('/districts/create', async (req, res) => {
+  try {
+    const { name, state, coordinates } = req.body;
+    const adminId = req.user._id;
+
+    if (!name || !state) {
+      return res.status(400).json({
+        success: false,
+        message: 'District name and state are required'
+      });
+    }
+
+    // Check if district already exists
+    const existingDistrict = await District.findOne({
+      name: new RegExp(name, 'i'),
+      state: new RegExp(state, 'i')
+    });
+
+    if (existingDistrict) {
+      return res.status(400).json({
+        success: false,
+        message: 'District already exists'
+      });
+    }
+
+    const district = new District({
+      name: name.toUpperCase(),
+      state: state.toUpperCase(),
+      coordinates: coordinates || {},
+      createdBy: adminId
+    });
+
+    await district.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'District created successfully',
+      data: district
+    });
+  } catch (error) {
+    console.error('Create district error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get all districts
+router.get('/districts', validateQuery(commonSchemas.pagination), async (req, res) => {
+  try {
+    const { page = 1, limit = 10, state, search } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = { isActive: true };
+    if (state && state !== 'all') {
+      query.state = new RegExp(state, 'i');
+    }
+    if (search) {
+      query.$or = [
+        { name: new RegExp(search, 'i') },
+        { state: new RegExp(search, 'i') },
+        { code: new RegExp(search, 'i') }
+      ];
+    }
+
+    const districts = await District.find(query)
+      .populate('createdBy', 'name email')
+      .sort({ state: 1, name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await District.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: districts,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    console.error('Get districts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// ==================== EMPLOYEE COMMISSION MANAGEMENT ====================
+
+// Get all employee commissions
+router.get('/employee-commissions', validateQuery(commonSchemas.pagination), async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status, employeeId } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+    if (employeeId) {
+      query.employee = employeeId;
+    }
+
+    const commissions = await EmployeeCommission.find(query)
+      .populate('employee', 'employeeId name email role')
+      .populate('seller', 'name email vendorDetails.shopName')
+      .populate('subscription', 'plan amount status')
+      .populate('admin.approvedBy', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await EmployeeCommission.countDocuments(query);
+
+    // Get commission statistics
+    const stats = await EmployeeCommission.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$commission.amount' }
+        }
+      }
+    ]);
+
+    const summary = {
+      pending: { count: 0, amount: 0 },
+      paid: { count: 0, amount: 0 },
+      cancelled: { count: 0, amount: 0 }
+    };
+
+    stats.forEach(stat => {
+      summary[stat._id] = { count: stat.count, amount: stat.totalAmount };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        commissions,
+        summary
+      },
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    console.error('Get employee commissions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Approve employee commission
+router.post('/employee-commissions/:commissionId/approve', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { commissionId } = req.params;
+    const { adminNotes } = req.body;
+    const adminId = req.user._id;
+
+    const commission = await EmployeeCommission.findById(commissionId)
+      .populate('employee', 'name email wallet')
+      .populate('seller', 'name vendorDetails.shopName');
+
+    if (!commission) {
+      return res.status(404).json({
+        success: false,
+        message: 'Commission record not found'
+      });
+    }
+
+    if (commission.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Commission has already been processed'
+      });
+    }
+
+    // Approve commission
+    await commission.approve(adminId, adminNotes);
+
+    // Add commission to employee's wallet
+    const employee = await Employee.findById(commission.employee._id);
+    if (employee && employee.role === 'super_employee') {
+      await employee.addCommission(
+        commission.commission.amount,
+        `Commission for seller: ${commission.seller.name} (${commission.seller.vendorDetails.shopName})`,
+        commissionId
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Employee commission approved and paid successfully',
+      data: {
+        commission: {
+          _id: commission._id,
+          status: commission.status,
+          amount: commission.commission.amount,
+          paidAt: commission.payment.paidAt,
+          transactionId: commission.payment.transactionId
+        },
+        employee: {
+          name: employee.name,
+          newWalletBalance: employee.wallet.balance
+        },
+        seller: {
+          name: commission.seller.name,
+          shopName: commission.seller.vendorDetails.shopName
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Approve employee commission error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Reject employee commission
+router.post('/employee-commissions/:commissionId/reject', validateParams(commonSchemas.id), async (req, res) => {
+  try {
+    const { commissionId } = req.params;
+    const { adminNotes } = req.body;
+    const adminId = req.user._id;
+
+    const commission = await EmployeeCommission.findById(commissionId)
+      .populate('seller', 'name vendorDetails.shopName');
+
+    if (!commission) {
+      return res.status(404).json({
+        success: false,
+        message: 'Commission record not found'
+      });
+    }
+
+    if (commission.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Commission has already been processed'
+      });
+    }
+
+    // Reject commission
+    await commission.cancel(adminId, adminNotes);
+
+    res.json({
+      success: true,
+      message: 'Employee commission rejected successfully',
+      data: {
+        commission: {
+          _id: commission._id,
+          status: commission.status,
+          amount: commission.commission.amount,
+          rejectedAt: commission.admin.approvedAt
+        },
+        seller: {
+          name: commission.seller.name,
+          shopName: commission.seller.vendorDetails.shopName
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Reject employee commission error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

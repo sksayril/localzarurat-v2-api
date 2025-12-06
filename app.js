@@ -17,6 +17,7 @@ const adminRouter = require('./routes/admin');
 const vendorRouter = require('./routes/vendor');
 const customerRouter = require('./routes/customer');
 const paymentRouter = require('./routes/payment');
+const employeeRouter = require('./routes/employee');
 
 const app = express();
 
@@ -58,6 +59,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/vendor', vendorRouter);
 app.use('/api/customer', customerRouter);
 app.use('/api/payment', paymentRouter);
+app.use('/api/employee', employeeRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

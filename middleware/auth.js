@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
+const Employee = require('../models/employee.model');
 
 // Generate JWT token
 const generateToken = (userId, role) => {
@@ -23,6 +24,33 @@ const verifyToken = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Check if it's an employee token
+    if (decoded.employeeId) {
+      const employee = await Employee.findById(decoded.employeeId).select('-password');
+      
+      if (!employee) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid token'
+        });
+      }
+
+      if (!employee.isActive) {
+        return res.status(401).json({
+          success: false,
+          message: 'Account is deactivated'
+        });
+      }
+
+      req.user = employee;
+      req.user.role = employee.role;
+      req.user.employeeId = employee._id;
+      next();
+      return;
+    }
+    
+    // Regular user token
     const user = await User.findById(decoded.userId).select('-password');
     
     if (!user) {
@@ -92,11 +120,23 @@ const vendorOnly = authorize('vendor');
 // Customer only middleware
 const customerOnly = authorize('customer');
 
+// Super employee only middleware
+const superEmployeeOnly = authorize('super_employee');
+
+// Employee only middleware
+const employeeOnly = authorize('employee');
+
 // Admin or vendor middleware
 const adminOrVendor = authorize('admin', 'vendor');
 
 // Admin or customer middleware
 const adminOrCustomer = authorize('admin', 'customer');
+
+// Admin or employee middleware
+const adminOrEmployee = authorize('admin', 'super_employee', 'employee');
+
+// Super employee or employee middleware
+const superEmployeeOrEmployee = authorize('super_employee', 'employee');
 
 // Optional authentication middleware (doesn't fail if no token)
 const optionalAuth = async (req, res, next) => {
@@ -142,11 +182,21 @@ const checkLoginAttempts = async (req, res, next) => {
 const updateLastLogin = async (req, res, next) => {
   try {
     if (req.user) {
-      await User.findByIdAndUpdate(req.user._id, {
-        lastLogin: new Date(),
-        loginAttempts: 0,
-        lockUntil: null
-      });
+      // Check if it's an employee
+      if (req.user.employeeId) {
+        await Employee.findByIdAndUpdate(req.user._id, {
+          lastLogin: new Date(),
+          loginAttempts: 0,
+          lockUntil: null
+        });
+      } else {
+        // Regular user
+        await User.findByIdAndUpdate(req.user._id, {
+          lastLogin: new Date(),
+          loginAttempts: 0,
+          lockUntil: null
+        });
+      }
     }
     next();
   } catch (error) {
@@ -161,8 +211,12 @@ module.exports = {
   adminOnly,
   vendorOnly,
   customerOnly,
+  superEmployeeOnly,
+  employeeOnly,
   adminOrVendor,
   adminOrCustomer,
+  adminOrEmployee,
+  superEmployeeOrEmployee,
   optionalAuth,
   checkLoginAttempts,
   updateLastLogin

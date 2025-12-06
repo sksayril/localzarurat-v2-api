@@ -213,6 +213,7 @@ router.post('/vendor-signup', uploadVendorImages('vendor-signup'), async (req, r
       mainCategory, 
       subCategory, 
       referralCode, 
+      employeeCode,
       vendorAddress,
       securityQuestions,
       shopImages 
@@ -260,6 +261,19 @@ router.post('/vendor-signup', uploadVendorImages('vendor-signup'), async (req, r
       }
     }
 
+    // Validate employee code if provided
+    let assignedEmployee = null;
+    if (employeeCode) {
+      const employeeValidation = await User.validateEmployeeCode(employeeCode);
+      if (!employeeValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: employeeValidation.message
+        });
+      }
+      assignedEmployee = employeeValidation.employee._id;
+    }
+
     // Handle uploaded shop images
     const uploadedImages = [];
     if (req.files && req.files.length > 0) {
@@ -279,6 +293,8 @@ router.post('/vendor-signup', uploadVendorImages('vendor-signup'), async (req, r
       phone,
       role: 'vendor',
       address: vendorAddress, // Use vendor address as main address
+      employeeCode: employeeCode ? employeeCode.toUpperCase() : null,
+      assignedEmployee: assignedEmployee,
       securityQuestions,
       vendorDetails: {
         gstNumber: gstNumber ? gstNumber.toUpperCase() : undefined,
